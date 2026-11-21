@@ -1,0 +1,23 @@
+# Med-RAG daily corpus snapshot timer (W5.5).
+#
+# Exact daily calendar trigger: midnight in the host timezone, deliberately
+# without RandomizedDelaySec — backup timing is an audit-adjacent control whose
+# evidence must line up with the synchronized clock (manual §0). Persistent=true
+# covers hosts that were powered off at midnight (the run fires on next boot),
+# which is what makes the daily cadence compatible with the RPO objective.
+#
+# Staggering is an operator decision for fleets (e.g. `OnCalendar=00:30` +
+# RandomizedDelaySec=15min in a drop-in); this repository keeps the exact
+# default so the evidence trail stays deterministic (manual §5).
+
+[Unit]
+Description=Med-RAG daily corpus snapshot timer
+Documentation=file:/opt/med-rag/medcopilot/docs/RELEASE_CHECKLIST.md
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+Unit=med-rag-backup.service
+
+[Install]
+WantedBy=timers.target

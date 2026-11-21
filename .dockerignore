@@ -1,0 +1,32 @@
+# Build context exclusions — keep images small and avoid leaking local data.
+# The approved, git-tracked datasets under medcopilot/datasets/ are
+# preserved (only root-anchored `data` is excluded).
+.git
+.venv
+.venv-ci
+venv
+.venv-supply
+.uv-cache
+**/.uv-cache
+__pycache__
+**/__pycache__
+*.pyc
+.pytest_cache
+.ruff_cache
+logs
+**/logs
+experiments
+**/experiments
+outputs
+**/outputs
+reports
+**/reports
+data
+checkpoints
+**/.zcode
+.task
+**/docs
+**/tests
+.env
+.env.*
+!.env.example

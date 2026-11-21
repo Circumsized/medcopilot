@@ -1,0 +1,147 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      matrix:
+        python-version: ["3.12"]
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09  # v5.1.0 (Node 24; v4 runs on the deprecated Node 20)
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3.0 (Node 24; v5 runs on the deprecated Node 20)
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - name: Lockfile freshness
+        # A dependency added to pyproject.toml without regenerating the lock would
+        # otherwise ship an image that silently installs something else.
+        run: |
+          python -m pip install uv==0.11.16
+          uv lock --check
+          for profile in base ci rag eval ocr build tools; do
+            python medcopilot/scripts/export_lock.py --profile "$profile" --check || {
+              echo "=== $profile rendered diff (debug) ==="
+              python medcopilot/scripts/export_lock.py --profile "$profile" --output "/tmp/$profile.rendered.txt" || true
+              case "$profile" in
+                base) target=requirements.lock.txt ;;
+                *) target=requirements-$profile.lock.txt ;;
+              esac
+              diff "/tmp/$profile.rendered.txt" "$target" | head -40 || true
+              exit 1
+            }
+          done
+      - name: Install dependencies
+        run: |
+          python -m pip install --require-hashes --extra-index-url https://download.pytorch.org/whl/cpu -r requirements-ci.lock.txt
+          python -m pip install --no-deps -e .
+          python -m pip install --require-hashes -r requirements-tools.lock.txt
+      - name: Install rag extras (3.12 only - the chromadb/onnxruntime chain needs >=3.11)
+        if: matrix.python-version == '3.12'
+        run: python -m pip install --require-hashes --extra-index-url https://download.pytorch.org/whl/cpu -r requirements-rag.lock.txt
+      - name: Lint
+        run: ruff check .
+      - name: Compile check
+        run: python -m compileall -q .
+      - name: Unit tests
+        env:
+          MOCK_LLM: "1"
+        run: python -m pytest medcopilot/tests/ -v -m "not slow"
+      - name: Golden behavior gate
+        env:
+          MOCK_LLM: "1"
+        run: PYTHONPATH=. python medcopilot/scripts/eval_golden.py
+      - name: Safety policy gate
+        env:
+          MOCK_LLM: "1"
+        run: PYTHONPATH=. python medcopilot/scripts/policy_check.py
+      - name: Emergency red-flag gate
+        env:
+          MOCK_LLM: "1"
+        run: PYTHONPATH=. python medcopilot/scripts/emergency_eval.py
+      - name: Recovery drill (8 scenarios)
+        env:
+          MOCK_LLM: "1"
+        run: |
+          mkdir -p outputs
+          PYTHONPATH=. python medcopilot/scripts/recovery_drill.py --output outputs/recovery_drill.json
+      - name: Dependency audit
+        env:
+          # chromadb 1.5.9 (latest release; no fixed version exists) advisories all
+          # target chromadb's networked server / multi-tenant RBAC deployment
+          # (pre-auth code injection, authenticated data access, RBAC tenant
+          # isolation). This project uses chromadb strictly as an in-process
+          # embedded PersistentClient - no server, no network listener, no auth
+          # provider - so those attack surfaces do not exist here. Revisit when
+          # chromadb ships a fix or the usage changes.
+          RAG_IGNORES: >-
+            --ignore-vuln PYSEC-2026-311 --ignore-vuln PYSEC-2026-3813
+            --ignore-vuln PYSEC-2026-3814 --ignore-vuln PYSEC-2026-3815
+        # --require-hashes means a package missing from the lock (or missing its
+        # hashes) fails the audit instead of being resolved on the fly.
+        # NOT --strict: the CPU-only torch builds are not published on PyPI, so
+        # the advisory service cannot look them up; the gap is covered by the
+        # hash pin plus the SBOM wheel hash.
+        run: |
+          # Audit every lock CI installs, not just the base one: each profile's
+          # vulnerability surface is real (export_lock.py keeps them separately
+          # auditable).
+          pip-audit --require-hashes --extra-index-url https://download.pytorch.org/whl/cpu \
+            -r requirements.lock.txt || exit 1
+          pip-audit --require-hashes --extra-index-url https://download.pytorch.org/whl/cpu \
+            -r requirements-ci.lock.txt || exit 1
+          pip-audit --require-hashes --extra-index-url https://download.pytorch.org/whl/cpu \
+            -r requirements-tools.lock.txt || exit 1
+          # NOT --strict: the CPU-only torch builds are not published on PyPI, so
+          # the advisory service cannot look them up; the gap is covered by the
+          # hash pin plus the SBOM wheel hash.
+          pip-audit --require-hashes --extra-index-url https://download.pytorch.org/whl/cpu \
+            ${RAG_IGNORES} \
+            -r requirements-rag.lock.txt || exit 1
+      - name: Load check
+        env:
+          MOCK_LLM: "1"
+        run: PYTHONPATH=. python medcopilot/scripts/load_check.py --concurrency 4 --requests-per-worker 2 --output outputs/load_report.json
+      - name: Release evidence pack
+        if: always()
+        env:
+          MOCK_LLM: "1"
+        # Exit 1 is the documented "not a full pass" signal, so the verdict lives
+        # in the artifact. Exit code is only accepted together with a fresh
+        # artifact: 0 + overall==pass, or 1 + overall==engineering_pass_clinical_blocked.
+        run: |
+          rm -f outputs/release_pack.json
+          status=0
+          PYTHONPATH=. python medcopilot/scripts/release_pack.py --profile opensource --output outputs/release_pack.json || status=$?
+          if [ ! -f outputs/release_pack.json ]; then
+            echo "release pack exited $status and wrote no artifact" >&2
+            exit 1
+          fi
+          overall=$(python -c "import json; print(json.load(open('outputs/release_pack.json', encoding='utf-8'))['overall'])") || exit 1
+          echo "release pack: overall=$overall (exit $status)"
+          if [ "$status" -eq 0 ] && [ "$overall" = "pass" ]; then
+            exit 0
+          fi
+          if [ "$status" -eq 1 ] && [ "$overall" = "engineering_pass_clinical_blocked" ]; then
+            echo "engineering pass: clinical signoff unsigned - the production release gate stays blocked"
+            exit 0
+          fi
+          echo "release pack outcome not acceptable: overall=$overall exit=$status" >&2
+          exit 1
+      - name: Redaction scan
+        id: redact_scan
+        # Runs AFTER the pack so the scan also covers outputs/release_pack.json
+        # itself: the pack embeds gate stdout/stderr tails, and an unscanned
+        # evidence bundle is exactly where a leaked credential would hide.
+        if: always()
+        run: PYTHONPATH=. python medcopilot/scripts/redact_scan.py outputs

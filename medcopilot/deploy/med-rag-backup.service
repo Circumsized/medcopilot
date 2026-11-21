@@ -1,0 +1,38 @@
+# Med-RAG corpus snapshot service (W5.5; RPO objective 24h, RTO objective 30min).
+#
+# Runs the snapshot CLI from docs/RELEASE_CHECKLIST.md §2: copies the
+# authoritative corpus directory (MED_CORPUS_DIR) into the backup root
+# (MED_BACKUP_DIR) with per-file SHA-256 entries. MED_CORPUS_DIR /
+# MED_BACKUP_DIR are deployment-layout keys defined in /etc/med-rag/med-rag.env
+# (manual §1); they are NOT AppConfig aliases, so the Docker entrypoint
+# allowlist drops them there — this unit is the only consumer.
+#
+# EnvironmentFile= is parsed by systemd as data (never executed). The two
+# ExecStartPre guards fail the unit with a clear status instead of letting an
+# unset variable expand to an empty path argument.
+[Unit]
+Description=Med-RAG corpus snapshot (oneshot)
+Documentation=file:/opt/med-rag/medcopilot/docs/RELEASE_CHECKLIST.md
+After=local-fs.target
+
+[Service]
+Type=oneshot
+User=medrag
+Group=medrag
+EnvironmentFile=/etc/med-rag/med-rag.env
+UnsetEnvironment=PYTHONPATH LD_PRELOAD
+WorkingDirectory=/opt/med-rag
+# Double-quoted so a deployment path containing spaces is passed as ONE
+# argument (unquoted systemd ${VAR} expansion word-splits on whitespace).
+ExecStartPre=/usr/bin/test -n "${MED_CORPUS_DIR}"
+ExecStartPre=/usr/bin/test -n "${MED_BACKUP_DIR}"
+ExecStart=/usr/bin/python3 -m medcopilot.scripts.backup_snapshot create "${MED_CORPUS_DIR}" "${MED_BACKUP_DIR}"
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+# Both the corpus directory and the backup root must live under one of these
+# paths (default layout: /var/lib/med-rag/{data,backups}); extend the list when
+# the backup root is placed on a separate mount.
+ReadWritePaths=/var/lib/med-rag

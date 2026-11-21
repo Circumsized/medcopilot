@@ -1,0 +1,18 @@
+{"type": "meta", "dataset": "rag_golden", "version": 1, "note": "教学用简化说明书标签；金标答案为临床正确期望，而非当前实现的输出"}
+{"type": "corpus", "corpus_id": "ibu-v1", "drug_name": "布洛芬缓释胶囊", "text": "【药品名称】布洛芬缓释胶囊\n【适应症】用于缓解轻至中度疼痛如头痛、关节痛、偏头痛、牙痛、肌肉痛、神经痛、痛经。也用于普通感冒或流行性感冒引起的发热。\n【用法用量】口服。成人及12岁以上儿童：一日2次，一次1粒（0.3g），早晚各一次。\n【禁忌】活动期消化道溃疡及出血患者禁用。严重肝肾功能不全者禁用。\n【不良反应】偶见恶心、上腹部疼痛、皮疹，多见于剂量较大时。"}
+{"type": "corpus", "corpus_id": "amox-v1", "drug_name": "阿莫西林胶囊", "text": "【药品名称】阿莫西林胶囊\n【适应症】用于敏感菌所致的呼吸道感染、泌尿道感染、皮肤软组织感染。\n【用法用量】口服。成人一次0.5g，每6至8小时1次，一日剂量不超过4g。\n【禁忌】青霉素过敏患者禁用。\n【药物相互作用】丙磺舒可提高本品的血药浓度。"}
+{"type": "corpus", "corpus_id": "met-v1", "drug_name": "盐酸二甲双胍片", "text": "【药品名称】盐酸二甲双胍片\n【适应症】用于单纯饮食控制及运动治疗无效的2型糖尿病。\n【用法用量】口服，餐中或餐后服用可减少胃肠道反应。起始剂量应较小，遵医嘱逐步调整。\n【禁忌】严重肾功能不全、糖尿病酮症酸中毒患者禁用。\n【不良反应】常见恶心、呕吐、腹泻等胃肠道反应。"}
+{"type": "case", "case_id": "ibu-contraindication-01", "kind": "retrieval", "question": "胃溃疡患者可以吃布洛芬缓释胶囊吗？", "expect": {"hit_drug": "布洛芬缓释胶囊", "hit_sections": ["禁忌"], "top_k": 3}}
+{"type": "case", "case_id": "ibu-dosage-01", "kind": "retrieval", "question": "布洛芬缓释胶囊一次吃几粒，一天几次？", "expect": {"hit_drug": "布洛芬缓释胶囊", "hit_sections": ["用法用量"], "top_k": 3}}
+{"type": "case", "case_id": "ibu-indication-01", "kind": "retrieval", "question": "布洛芬缓释胶囊能缓解哪些疼痛？", "expect": {"hit_drug": "布洛芬缓释胶囊", "hit_sections": ["适应症"], "top_k": 3}}
+{"type": "case", "case_id": "ibu-adverse-01", "kind": "retrieval", "question": "吃布洛芬缓释胶囊后恶心、上腹部疼痛怎么办？", "expect": {"hit_drug": "布洛芬缓释胶囊", "hit_sections": ["不良反应"], "top_k": 3}}
+{"type": "case", "case_id": "amox-contraindication-01", "kind": "retrieval", "question": "青霉素过敏的人感冒了能吃阿莫西林胶囊吗？", "expect": {"hit_drug": "阿莫西林胶囊", "hit_sections": ["禁忌"], "top_k": 3}}
+{"type": "case", "case_id": "amox-indication-01", "kind": "retrieval", "question": "阿莫西林胶囊可以治疗哪些感染？", "expect": {"hit_drug": "阿莫西林胶囊", "hit_sections": ["适应症"], "top_k": 3}}
+{"type": "case", "case_id": "cross-drug-amox-contraindication-01", "kind": "retrieval", "question": "阿莫西林胶囊的禁忌是什么？", "expect": {"hit_drug": "阿莫西林胶囊", "hit_sections": ["禁忌"], "top_k": 3}}
+{"type": "case", "case_id": "met-dosage-01", "kind": "retrieval", "question": "盐酸二甲双胍片应该在什么时候服用？", "expect": {"hit_drug": "盐酸二甲双胍片", "hit_sections": ["用法用量"], "top_k": 3}}
+{"type": "case", "case_id": "met-contraindication-01", "kind": "retrieval", "question": "肾功能不好的糖尿病患者能吃盐酸二甲双胍片吗？", "expect": {"hit_drug": "盐酸二甲双胍片", "hit_sections": ["禁忌"], "top_k": 3}}
+{"type": "case", "case_id": "emergency-chest-pain-01", "kind": "routing", "question": "突然胸口压榨一样疼，喘不上气，怀疑是心梗！", "expect": {"intent": "emergency"}}
+{"type": "case", "case_id": "emergency-child-seizure-01", "kind": "routing", "question": "孩子高烧抽搐了，还能继续喂布洛芬吗？", "expect": {"intent": "emergency"}}
+{"type": "case", "case_id": "non-medical-trip-01", "kind": "routing", "question": "帮我推荐一个暑假旅游攻略吧", "expect": {"intent": "non_medical"}}
+{"type": "case", "case_id": "abstain-absent-drug-01", "kind": "abstention", "question": "枸橼酸西地那非片第一次吃多少剂量合适？", "expect": {"abstained": true}}
+{"type": "case", "case_id": "abstain-insomnia-drug-01", "kind": "abstention", "question": "最近总是失眠睡不着，应该买什么安眠药，剂量多少？", "expect": {"abstained": true}}

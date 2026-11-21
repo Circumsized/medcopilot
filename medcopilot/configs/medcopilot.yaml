@@ -1,0 +1,126 @@
+# Project 2 (Med-Copilot) 参考配置 —— 【本文件不被代码加载】
+#
+# 运行时唯一生效来源是环境变量 / AppConfig（见 medcopilot/common/config.py 与 .env.example）。
+# 本文件仅作运维参考镜像；修改它不会改变任何行为。
+# 要调整行为请设置对应环境变量，例如：RRF_K=60 EVIDENCE_FLOOR=0.05
+#
+# 下列数值已与 AppConfig 默认值对齐；若与代码不一致，以代码为准。
+
+rag:
+  rrf_k: 60                 # RRF_K
+  rerank_top_n: 3           # RERANK_TOP_N
+  rerank_max_length: 512    # RERANK_MAX_LENGTH（与 bge-reranker-base 位置上限对齐）
+  rerank_enabled: true      # RERANK_ENABLED（CrossEncoder 缺失时自动降级为词法重排）
+  enable_chroma_dense: false # ENABLE_CHROMA_DENSE（默认关闭，需 chromadb 额外依赖）
+  max_drug_label_chars: 50000 # MAX_DRUG_LABEL_CHARS
+  embedding_model: "BAAI/bge-m3" # EMBEDDING_MODEL
+  embedding_provider: local          # EMBEDDING_PROVIDER: local|cloud
+  embedding_dim: 1024           # EMBEDDING_DIM
+  embedding_batch_size: 16      # EMBEDDING_BATCH_SIZE
+  embedding_normalize: true     # EMBEDDING_NORMALIZE
+  embedding_cache_dir: ""       # EMBEDDING_CACHE_DIR
+  # OpenAI 兼容 embedding API（评测/实验通道，默认关闭；生产默认离线权重）。
+  embedding_api_base: ""        # EMBEDDING_API_BASE
+  embedding_api_key: ""         # EMBEDDING_API_KEY（只存 .env，镜像恒为空）
+  embedding_api_timeout: 30.0   # EMBEDDING_API_TIMEOUT
+  rerank_provider: local         # RERANK_PROVIDER: local|cloud
+  rerank_api_base: ""            # RERANK_API_BASE
+  rerank_api_key: ""             # RERANK_API_KEY
+  rerank_api_timeout: 30.0       # RERANK_API_TIMEOUT
+  rerank_cache_dir: ""          # RERANK_CACHE_DIR
+  model_weights_offline: true   # MODEL_WEIGHTS_OFFLINE
+  # 分块由 ClinicalChunker 按说明书章节切分，不使用固定 chunk_size；
+  # 超长章节按 CHUNK_MAX_CHARS=480、重叠 60（剂量/句子保护边界） 字符再切。
+  # 稠密检索不可用（未配置/失败/冷却）时，融合入口只用 BM25 单路，
+  # 不把 TF-IDF 降级信号与 BM25 当作两路独立证据融合。
+  # RRF 排名与归一化 BM25 分数都不是校准后的医疗置信度。
+
+guard:
+  evidence_floor: 0.05      # EVIDENCE_FLOOR【已废弃】不再参与门控（RRF 分数非校准置信度，实测形同虚设）
+  groundedness_threshold: 0.15 # GROUNDEDNESS_THRESHOLD
+  retrieve_candidate_pool: 20  # RETRIEVE_CANDIDATE_POOL（W3.1 触发语境下候选池扩容）
+  evidence_top_n: 5           # EVIDENCE_TOP_N（最终证据块数，含保护位）
+  safety_reserve_slots: 2     # SAFETY_RESERVE_SLOTS（禁忌/相互作用保护位数量）
+  safety_section_gate_enabled: true # SAFETY_SECTION_GATE_ENABLED（触发语境下证据无安全章节 ⇒ 弃答）
+  sufficiency_enabled: true   # SUFFICIENCY_ENABLED（W3.3 锚点覆盖判据，替代 evidence_floor）
+  sufficiency_min_doc_coverage: 0.10 # SUFFICIENCY_MIN_DOC_COVERAGE（只拦近似零重叠）
+  sufficiency_min_union_coverage: 0.20 # SUFFICIENCY_MIN_UNION_COVERAGE
+  sufficiency_dry_run: true   # SUFFICIENCY_DRY_RUN（影子模式：只记录不弃答；校准后关闭）
+  dosage_gate_mode: "redact"  # DOSAGE_GATE_MODE（redact=转介 | quote=逐字引用+安全章节底线 | off=仅开发）
+  # 当前门控行为（比旧版更严格）：
+  #   1) 无证据或 sufficiency 锚点覆盖不足时，不调用 LLM，直接安全弃答；
+  #   2) grounding 比率不足或整句抽取核验失败时，替换正文为弃答，
+  #      并在响应中返回 abstained=true，不保留未获依据支持的治疗指令；
+  #   3) 共病/联用/决策意图 query 由保护位保证禁忌章节在场，否则弃答；
+  #   4) 指令性剂量句经 DosageGate 裁决（模式见 dosage_gate_mode）。
+  # 这是保守的完整句子核验，会拒绝部分合理意译；它不判断证据是否适合
+  # 当前患者，也不能抵御源材料本身被投毒，不可替代临床审核。
+
+llm:
+  mode: local             # LLM_MODE: local|cloud
+  max_tokens: 2048       # LLM_MAX_TOKENS
+  timeout: 60.0          # LLM_TIMEOUT
+  max_attempts: 3        # LLM_MAX_ATTEMPTS（总调用次数，非额外重试数）
+  backoff_base: 1.0      # LLM_BACKOFF_BASE（秒；指数退避 full jitter）
+  backoff_cap: 20.0      # LLM_BACKOFF_CAP（秒）
+  retry_deadline: 45.0   # LLM_RETRY_DEADLINE（总重试预算，秒）
+  allow_mock_in_prod: false # ALLOW_MOCK_IN_PRODUCTION
+  allow_text_egress: false  # ALLOW_TEXT_EGRESS（默认生产 fail-closed）
+
+api:
+  admin_api_key: ""         # ADMIN_API_KEY，留空=本地开发开放模式
+  # 生产（PROJECT_ENV=production）且未设置密钥时，读写接口一律 503，绝不 fail-open。
+  cors_allow_all: false     # CORS_ALLOW_ALL，仅本地调试；通配来源会禁用凭证传递
+  # Host 头白名单（逗号分隔；"*" = 不限）。starlette TrustedHostMiddleware 拒绝
+  # 伪造 Host 的请求（Host 头注入/缓存投毒缓解）；生产应固定为对外主机名。
+  trusted_hosts: "*"      # MED_TRUSTED_HOSTS
+  # 运行期摄取为进程本地；除非引入事务性共享文档/向量库，Docker 保持单 worker。
+  # UI（Gradio）是 FastAPI 的纯 HTTP 消费者，不在 UI 进程装配业务工作流：
+  med_api_base_url: "http://127.0.0.1:8000" # MED_API_BASE_URL
+  med_api_timeout_seconds: 30.0             # MED_API_TIMEOUT_SECONDS
+  # AppConfig is authoritative; this file is a mirror.
+  llm_prompt_token_budget: 3500             # MED_LLM_PROMPT_TOKEN_BUDGET
+  llm_evidence_token_budget: 2200           # MED_LLM_EVIDENCE_TOKEN_BUDGET
+  llm_chunk_token_cap: 1200                 # MED_LLM_CHUNK_TOKEN_CAP
+  ocr_max_lines: 5                         # MED_OCR_MAX_LINES
+  ocr_max_line_chars: 120                  # MED_OCR_MAX_LINE_CHARS
+  ocr_provider: local                      # OCR_PROVIDER: local|cloud
+  ocr_api_base: ""                         # OCR_API_BASE
+  ocr_api_key: ""                          # OCR_API_KEY
+  ocr_api_model: ""                        # OCR_API_MODEL
+  ocr_api_timeout: 30.0                    # OCR_API_TIMEOUT
+  allow_image_egress: false                # ALLOW_IMAGE_EGRESS
+  log_format: "human"                      # LOG_FORMAT
+  app_version: "2.0.0"                     # APP_VERSION
+  app_git_sha: "unknown"                   # APP_GIT_SHA
+  llm_max_tokens: 2048                      # LLM_MAX_TOKENS
+  llm_timeout: 60.0                         # LLM_TIMEOUT
+  llm_max_attempts: 3                       # LLM_MAX_ATTEMPTS
+  llm_backoff_base: 1.0                     # LLM_BACKOFF_BASE
+  llm_backoff_cap: 20.0                     # LLM_BACKOFF_CAP
+  llm_retry_deadline: 45.0                  # LLM_RETRY_DEADLINE
+  allow_mock_in_prod: false                 # ALLOW_MOCK_IN_PRODUCTION
+  # 进程内有界会话存储（单 worker 语义）：滑动 TTL 与容量均必须为正数。
+  # 容量满且全部占用时新会话 503；未知/过期显式会话 404（急救请求例外，
+  # 先于会话校验短路并签发新标识）；每个会话物理保留最近 3 轮。
+  med_session_ttl_seconds: 1800.0           # MED_SESSION_TTL_SECONDS
+  med_session_max_entries: 256              # MED_SESSION_MAX_ENTRIES
+  # 请求级限流（W2.3，进程内滑动窗口）与昂贵路径并发闸。急救分诊先于二者执行，
+  # 永不被限流；413/401 先于配额，不消耗额度；闸满立即 503（不排队）。
+  rate_limit_enabled: true                  # MED_RATE_LIMIT_ENABLED
+  rate_limit_consult_per_minute: 20         # MED_RATE_LIMIT_CONSULT_PER_MINUTE
+  rate_limit_image_per_minute: 6            # MED_RATE_LIMIT_IMAGE_PER_MINUTE
+  rate_limit_ingest_per_minute: 10          # MED_RATE_LIMIT_INGEST_PER_MINUTE
+  rate_limit_rebuild_per_hour: 2            # MED_RATE_LIMIT_REBUILD_PER_HOUR
+  llm_concurrency: 8                        # MED_LLM_CONCURRENCY
+  # 权威语料持久化（Slice 2）：JSONL 单行一 chunk；留空 = 禁用（纯内存）。
+  # 摄取幂等、按药品原子替换、先原子落盘（tmp+os.replace）后提交内存快照；
+  # 坏记录加载时跳过并在 /health 报 corpus_degraded。进程本地，单 worker。
+  med_corpus_path: ""                       # MED_CORPUS_PATH，如 ./data/corpus/documents.jsonl
+
+triage:
+  # TriageAgent 关键词分桶的只读镜像，代码为唯一权威来源。
+  # 注意：代码已刻意避免过宽单字命中（如"医""症"），
+  # 英文关键词使用 \b 词边界，避免 diet 触发 die。
+  keywords_ref: ./configs/triage_keywords.txt
+  sections_ref: ./configs/clinical_sections.txt

@@ -1,0 +1,56 @@
+# Med-RAG API service (W5.5/W5.7 deploy contract).
+#
+# Install to /etc/systemd/system/med-rag.service (copy as-is; paths below are
+# conventional FHS locations documented in docs/PRODUCTION_DEPLOY.md — adjust
+# them there and here together, never hardcode machine-local paths or secrets
+# in this file: everything instance-specific lives in /etc/med-rag/med-rag.env).
+#
+# systemd parses EnvironmentFile= as KEY=VALUE data and never executes it, so
+# this unit execs uvicorn directly instead of going through the Docker launcher
+# (deploy/entrypoint.py). The single-worker constraint is a hard invariant:
+# sessions and the authoritative corpus store are process-local
+# (docs/RELEASE_CHECKLIST.md §2).
+
+[Unit]
+Description=Med-RAG medical copilot API (agentic RAG, single worker)
+Documentation=file:/opt/med-rag/medcopilot/docs/RELEASE_CHECKLIST.md
+After=network-online.target time-sync.target
+Wants=network-online.target
+# NTP (time-sync.target above) is an audit prerequisite: audit retention
+# semantics assume a synchronized clock (HIPAA audit clock, see §0 of the manual).
+RequiresMountsFor=/var/lib/med-rag
+
+[Service]
+Type=simple
+User=medrag
+Group=medrag
+# Required (no '-' prefix) on purpose: a missing env file must fail the unit,
+# never silently start the service with default-deny misconfiguration.
+EnvironmentFile=/etc/med-rag/med-rag.env
+UnsetEnvironment=PYTHONPATH LD_PRELOAD
+WorkingDirectory=/opt/med-rag
+# Single worker: do not add --workers here. Loopback bind by default; put a TLS
+# reverse proxy in front when the service is exposed (manual §2).
+ExecStart=/usr/bin/python3 -m uvicorn medcopilot.api.server:app --host 127.0.0.1 --port 8000 --workers 1
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+UMask=0077
+# Minimal hardening. Kept deliberately small so torch/OpenMP/uvicorn keep
+# working without exceptions (e.g. no MemoryDenyWriteExecute — JIT allocators
+# need W^X); anything stronger belongs in a dedicated host-hardening slice.
+# PrivateTmp keeps image uploads in a private /tmp; ProtectHome forces HF/shared
+# caches under /opt or /var (manual §1 sets HF_HOME/RERANK_CACHE_DIR there).
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/med-rag
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+
+[Install]
+WantedBy=multi-user.target

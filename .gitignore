@@ -1,0 +1,40 @@
+# Git & IDE ignores
+.git/
+.zcode/
+.zcodeignore
+.task/
+.venv/
+.venv-ci/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+.idea/
+.vscode/
+
+# Local sensitive environment files
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+
+# Runtime data, vector indexes, logs, and generated reports
+data/
+chroma_db/
+logs/
+outputs/
+reports/
+*.db
+*.sqlite3
+*.onnx
+*.bin
